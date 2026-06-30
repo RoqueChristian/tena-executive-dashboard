@@ -1,0 +1,12 @@
+pandas
+numpy
+python-dotenv
+oracledb
+psycopg2-binary
+streamlit
+plotly
+xlsxwriter
+mysql-connector-python
+openpyxl
+pytz
+sqlalchemy
