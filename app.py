@@ -331,7 +331,7 @@ def render_tab_sell_out():
 
     st.markdown("---")
 
-    g1, g2 = st.columns([2, 1])
+    g1, g2 = st.columns([1.5, 1])
     with g1:
         st.subheader("📅 Evolução de Vendas Líquidas Mês a Mês")
         df_evolucao = df_so.groupby('mes_ano', as_index=False)[metric_target].sum()
