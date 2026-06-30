@@ -51,6 +51,13 @@ st.markdown("""
         margin-top: auto;
         margin-bottom: auto;
     }
+    
+    /* Ajuste para centralizar verticalmente as logos no Custom Header */
+    .logo-container {
+        display: flex;
+        align-items: center;
+        height: 100%;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -204,7 +211,6 @@ def render_tab_sell_in():
                 title="Financeiro: Compras Pedidas vs. Entregues",
                 color_discrete_sequence=['#1f77b4', '#aec7e8']
             )
-            
             fig_si.update_layout(separators=",.", yaxis_tickformat=",.2f")
             fig_si.update_traces(hovertemplate="<b>%{data.name}</b><br>Período: %{x}<br>Montante: R$ %{y:,.2f}<extra></extra>")
         else:
@@ -214,7 +220,6 @@ def render_tab_sell_in():
                 title="Volumetria: Peças Pedidas vs. Entregues",
                 color_discrete_sequence=['#2ca02c', '#98df8a']
             )
-            
             fig_si.update_layout(separators=",.", yaxis_tickformat=",.0f")
             fig_si.update_traces(hovertemplate="<b>%{data.name}</b><br>Período: %{x}<br>Volume: %{y:,.0f} Unid.<extra></extra>")
         st.plotly_chart(fig_si, use_container_width=True)
@@ -229,7 +234,6 @@ def render_tab_sell_in():
             title="Distribuição do Inventário Atual",
             color=metric_col, color_continuous_scale='Blues'
         )
-        
         fig_cat.update_layout(separators=",.", xaxis_tickformat=",.2f" if is_valor else ",.0f")
         if is_valor:
             fig_cat.update_traces(hovertemplate="<b>%{y}</b><br>Total em Estoque: R$ %{x:,.2f}<extra></extra>")
@@ -331,7 +335,7 @@ def render_tab_sell_out():
 
     st.markdown("---")
 
-    g1, g2 = st.columns([1.5, 1])
+    g1, g2 = st.columns([2, 1])
     with g1:
         st.subheader("📅 Evolução de Vendas Líquidas Mês a Mês")
         df_evolucao = df_so.groupby('mes_ano', as_index=False)[metric_target].sum()
@@ -340,7 +344,6 @@ def render_tab_sell_out():
             labels={'mes_ano': 'Mês de Competência', metric_target: metric_label},
             markers=True, title="Curva de Escoamento Temporal"
         )
-        
         fig_ev.update_layout(separators=",.", yaxis_tickformat=",.2f" if is_valor else ",.0f")
         fig_ev.update_traces(hovertemplate="<b>%{x}</b><br>Montante: R$ %{y:,.2f}<extra></extra>" if is_valor else "<b>%{x}</b><br>Volume: %{y:,.0f} Unid.<extra></extra>")
         st.plotly_chart(fig_ev, use_container_width=True)
@@ -353,7 +356,6 @@ def render_tab_sell_out():
             hole=0.4, title="Mix de Canais de Distribuição",
             color_discrete_sequence=px.colors.qualitative.Pastel
         )
-        
         fig_share.update_layout(separators=",.")
         fig_share.update_traces(
             hovertemplate="<b>%{label}</b><br>Montante: R$ %{value:,.2f}<extra></extra>" if is_valor else "<b>%{label}</b><br>Volume: %{value:,.0f} Unid.<extra></extra>"
@@ -372,7 +374,6 @@ def render_tab_sell_out():
             labels={metric_target: metric_label, 'nm_cliente': 'Cliente'},
             color=metric_target, color_continuous_scale='GnBu'
         )
-        
         fig_cli.update_layout(
             separators=",.", 
             xaxis_tickformat=",.2f" if is_valor else ",.0f",
@@ -390,7 +391,6 @@ def render_tab_sell_out():
             labels={metric_target: metric_label, 'desc_produto': 'Produto'},
             color=metric_target, color_continuous_scale='Oranges'
         )
-        
         fig_prod.update_layout(
             separators=",.", 
             xaxis_tickformat=",.2f" if is_valor else ",.0f",
@@ -482,7 +482,6 @@ def render_tab_positivacao():
             labels={'mes_ano': 'Mês/Ano', 'total_unicos': 'Clientes Únicos Atendidos'},
             markers=True, title="Evolução da Ativação de Contas Comerciais"
         )
-        
         fig_line.update_layout(separators=",.", yaxis_tickformat=",.0f")
         fig_line.update_traces(hovertemplate="<b>%{x}</b><br>Clientes Únicos: %{y:,.0f}<extra></extra>")
         st.plotly_chart(fig_line, use_container_width=True)
@@ -498,7 +497,6 @@ def render_tab_positivacao():
             title=f"Capilaridade por Categoria em {mes_atual_str}",
             color='qtd_clientes_positivados', color_continuous_scale='Purples'
         )
-        
         fig_cat.update_layout(separators=",.", xaxis_tickformat=",.0f")
         fig_cat.update_traces(hovertemplate="<b>%{y}</b><br>Clientes Positivados: %{x:,.0f}<extra></extra>")
         st.plotly_chart(fig_cat, use_container_width=True)
@@ -532,6 +530,23 @@ def render_tab_positivacao():
 # 5. ORQUESTRAÇÃO DA INTERFACE PRINCIPAL
 # ============================================================================
 def main():
+    
+    # ========================================================================
+    # CABEÇALHO CUSTOMIZADO (BRANDING)
+    # ========================================================================
+    col_logo_esq, col_espaco, col_logo_dir = st.columns([1, 4, 1])
+    
+    with col_logo_esq:
+        # Carrega a imagem local da distribuidora
+        st.image("imagens/logo total.png", use_container_width=True)
+        
+    with col_logo_dir:
+        # Carrega a imagem local do fornecedor (Tena)
+        st.image("imagens/logo tena.png", use_container_width=True)
+        
+    st.markdown("---")
+    # ========================================================================
+
     with st.sidebar:
         st.title("⚙️ B.I. Fornecedor")
         st.markdown("---")
