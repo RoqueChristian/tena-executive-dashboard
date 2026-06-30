@@ -204,7 +204,7 @@ def render_tab_sell_in():
                 title="Financeiro: Compras Pedidas vs. Entregues",
                 color_discrete_sequence=['#1f77b4', '#aec7e8']
             )
-            # CORREÇÃO: separators=",." (decimal=vírgula, milhares=ponto)
+            
             fig_si.update_layout(separators=",.", yaxis_tickformat=",.2f")
             fig_si.update_traces(hovertemplate="<b>%{data.name}</b><br>Período: %{x}<br>Montante: R$ %{y:,.2f}<extra></extra>")
         else:
@@ -214,7 +214,7 @@ def render_tab_sell_in():
                 title="Volumetria: Peças Pedidas vs. Entregues",
                 color_discrete_sequence=['#2ca02c', '#98df8a']
             )
-            # CORREÇÃO: separators=",."
+            
             fig_si.update_layout(separators=",.", yaxis_tickformat=",.0f")
             fig_si.update_traces(hovertemplate="<b>%{data.name}</b><br>Período: %{x}<br>Volume: %{y:,.0f} Unid.<extra></extra>")
         st.plotly_chart(fig_si, use_container_width=True)
@@ -229,7 +229,7 @@ def render_tab_sell_in():
             title="Distribuição do Inventário Atual",
             color=metric_col, color_continuous_scale='Blues'
         )
-        # CORREÇÃO: separators=",."
+        
         fig_cat.update_layout(separators=",.", xaxis_tickformat=",.2f" if is_valor else ",.0f")
         if is_valor:
             fig_cat.update_traces(hovertemplate="<b>%{y}</b><br>Total em Estoque: R$ %{x:,.2f}<extra></extra>")
@@ -340,7 +340,7 @@ def render_tab_sell_out():
             labels={'mes_ano': 'Mês de Competência', metric_target: metric_label},
             markers=True, title="Curva de Escoamento Temporal"
         )
-        # CORREÇÃO: separators=",."
+        
         fig_ev.update_layout(separators=",.", yaxis_tickformat=",.2f" if is_valor else ",.0f")
         fig_ev.update_traces(hovertemplate="<b>%{x}</b><br>Montante: R$ %{y:,.2f}<extra></extra>" if is_valor else "<b>%{x}</b><br>Volume: %{y:,.0f} Unid.<extra></extra>")
         st.plotly_chart(fig_ev, use_container_width=True)
@@ -353,7 +353,7 @@ def render_tab_sell_out():
             hole=0.4, title="Mix de Canais de Distribuição",
             color_discrete_sequence=px.colors.qualitative.Pastel
         )
-        # CORREÇÃO: separators=",."
+        
         fig_share.update_layout(separators=",.")
         fig_share.update_traces(
             hovertemplate="<b>%{label}</b><br>Montante: R$ %{value:,.2f}<extra></extra>" if is_valor else "<b>%{label}</b><br>Volume: %{value:,.0f} Unid.<extra></extra>"
@@ -372,7 +372,7 @@ def render_tab_sell_out():
             labels={metric_target: metric_label, 'nm_cliente': 'Cliente'},
             color=metric_target, color_continuous_scale='GnBu'
         )
-        # CORREÇÃO: separators=",."
+        
         fig_cli.update_layout(
             separators=",.", 
             xaxis_tickformat=",.2f" if is_valor else ",.0f",
@@ -390,7 +390,7 @@ def render_tab_sell_out():
             labels={metric_target: metric_label, 'desc_produto': 'Produto'},
             color=metric_target, color_continuous_scale='Oranges'
         )
-        # CORREÇÃO: separators=",."
+        
         fig_prod.update_layout(
             separators=",.", 
             xaxis_tickformat=",.2f" if is_valor else ",.0f",
@@ -482,7 +482,7 @@ def render_tab_positivacao():
             labels={'mes_ano': 'Mês/Ano', 'total_unicos': 'Clientes Únicos Atendidos'},
             markers=True, title="Evolução da Ativação de Contas Comerciais"
         )
-        # CORREÇÃO: separators=",."
+        
         fig_line.update_layout(separators=",.", yaxis_tickformat=",.0f")
         fig_line.update_traces(hovertemplate="<b>%{x}</b><br>Clientes Únicos: %{y:,.0f}<extra></extra>")
         st.plotly_chart(fig_line, use_container_width=True)
@@ -498,7 +498,7 @@ def render_tab_positivacao():
             title=f"Capilaridade por Categoria em {mes_atual_str}",
             color='qtd_clientes_positivados', color_continuous_scale='Purples'
         )
-        # CORREÇÃO: separators=",."
+        
         fig_cat.update_layout(separators=",.", xaxis_tickformat=",.0f")
         fig_cat.update_traces(hovertemplate="<b>%{y}</b><br>Clientes Positivados: %{x:,.0f}<extra></extra>")
         st.plotly_chart(fig_cat, use_container_width=True)
