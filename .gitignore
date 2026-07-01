@@ -2,3 +2,5 @@
 .streamlit/secrets.toml
 venv/
 __pycache__/
+sql/
+etl_tena_supabase.py
