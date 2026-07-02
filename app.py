@@ -439,7 +439,7 @@ def render_tab_positivacao():
         GROUP BY TO_CHAR(so.dt_venda, 'YYYY-MM'), p.desc_produto, p.categoria, p.marca;
     """
     
-    query_total_clientes = "SELECT COUNT(*) as total FROM dim_cliente;"
+    query_total_clientes = "SELECT COUNT(*) as total FROM dim_cliente WHERE uf = 'CE';"
     
     df_pos = load_data(query_positivacao)
     df_total_cli = load_data(query_total_clientes)
