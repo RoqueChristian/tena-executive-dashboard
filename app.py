@@ -547,12 +547,12 @@ def main():
     st.markdown("---")
     # ========================================================================
 
-    with st.sidebar:
-        st.title("⚙️ B.I. Fornecedor")
-        st.markdown("---")
-        ano_selecionado = st.selectbox("Ano de Referência", ["2026"])
-        st.markdown("---")
-        st.caption("Atualizado via Pipeline Batch diário.")
+    # with st.sidebar:
+    #     st.title("⚙️ B.I. Fornecedor")
+    #     st.markdown("---")
+    #     ano_selecionado = st.selectbox("Ano de Referência", ["2026"])
+    #     st.markdown("---")
+    #     st.caption("Atualizado via Pipeline Batch diário.")
 
     tab1, tab2, tab3 = st.tabs([
         "📦 1. SELL IN (Estoque e Compras)", 
