@@ -254,17 +254,20 @@ def render_tab_sell_in():
         'vl_total_estoque': 'Valor Estoque (R$)',
         'custo_unitario': 'Custo Última Entrada (R$)',
         'dias_zerados_90d': 'Dias Zerados (90d)',
-        'DOH': 'DOH (Dias)'
+        'DOH': 'DOH (Dias)',
+        'venda_media_diaria': 'Venda Média Diária (Unid.)'
     })
     
-    cols_to_show = ['Cód. SKU', 'Descrição do Produto', 'Categoria', 'Marca', 'Qtd. Estoque', 'Valor Estoque (R$)', 'Custo Última Entrada (R$)', 'DOH (Dias)', 'Dias Zerados (90d)']
+    cols_to_show = ['Cód. SKU', 'Descrição do Produto', 'Categoria', 'Marca', 'Qtd. Estoque', 'Valor Estoque (R$)',
+                     'Custo Última Entrada (R$)', 'DOH (Dias)', 'Dias Zerados (90d)', 'Venda Média Diária (Unid.)']
     
     st.dataframe(
         df_view[cols_to_show].style.format({
             'Valor Estoque (R$)': formatar_moeda,
             'Custo Última Entrada (R$)': formatar_moeda,
             'Qtd. Estoque': formatar_inteiro,
-            'DOH (Dias)': lambda x: formatar_decimal(x, 1)
+            'DOH (Dias)': lambda x: formatar_decimal(x, 1),
+            'Venda Média Diária (Unid.)': formatar_inteiro 
         }),
         use_container_width=True,
         hide_index=True
@@ -534,7 +537,7 @@ def main():
     # ========================================================================
     # CABEÇALHO CUSTOMIZADO (BRANDING)
     # ========================================================================
-    col_logo_esq, col_espaco, col_logo_dir = st.columns([1, 4, 1])
+    col_logo_esq, col_espaco, col_logo_dir = st.columns([1, 4, 1.1])
     
     with col_logo_esq:
         # Carrega a imagem local da distribuidora
