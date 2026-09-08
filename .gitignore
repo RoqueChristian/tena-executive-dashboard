@@ -4,3 +4,4 @@ venv/
 __pycache__/
 sql/
 etl_tena_supabase.py
+etl_tena_parquet.py

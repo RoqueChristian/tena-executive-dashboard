@@ -1,7 +1,8 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from sqlalchemy import create_engine
+import duckdb
+import os
 
 # ============================================================================
 # 1. CONFIGURAÇÃO DA PÁGINA
@@ -74,33 +75,98 @@ def formatar_decimal(valor, casas=1):
     except (TypeError, ValueError): return "Valor inválido"
 
 # ============================================================================
-# 3. GESTÃO DE CONEXÃO E CACHE DE DADOS
-# ============================================================================@st.cache_resource
-def init_connection():
-    db_user = st.secrets["SUPABASE_DB_USER"]
-    db_pass = st.secrets["SUPABASE_DB_PASSWORD"]
-    db_host = st.secrets["SUPABASE_DB_HOST"]
-    db_port = st.secrets["SUPABASE_DB_PORT"]
-    db_name = st.secrets["SUPABASE_DB_NAME"]
-    
-    conn_str = f"postgresql://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
-    return create_engine(conn_str)
+# 3. GESTÃO DE CONEXÃO E CACHE DE DADOS (LEITURA DIRETA DOS PARQUET LOCAIS)
+# ============================================================================
+DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 
-#@st.cache_data(ttl=3600)
-def load_data(query: str):
-    engine = init_connection()
-    with engine.connect() as conn:
-        return pd.read_sql_query(query, conn)
+# O ETL (etl_tena_parquet.py) grava um arquivo de nome fixo por tabela e
+# sobrescreve a cada execução -> aqui basta ler "data/{tabela}.parquet" direto.
+TABELAS = [
+    "dim_cliente", "dim_filial", "dim_fornecedor", "dim_produto",
+    "fato_sell_in", "fato_recebimento", "fato_estoque_diario",
+]
+
+NOMES_MESES_PT = {
+    1: "Janeiro", 2: "Fevereiro", 3: "Março", 4: "Abril", 5: "Maio", 6: "Junho",
+    7: "Julho", 8: "Agosto", 9: "Setembro", 10: "Outubro", 11: "Novembro", 12: "Dezembro",
+}
+
+def _caminho_parquet(tabela: str) -> str:
+    caminho = os.path.join(DATA_DIR, f"{tabela}.parquet")
+    if not os.path.exists(caminho):
+        raise FileNotFoundError(f"Parquet não encontrado para '{tabela}' em {caminho}")
+    return caminho.replace("\\", "/")
+
+@st.cache_resource
+def init_connection():
+    con = duckdb.connect(database=":memory:")
+
+    for tabela in TABELAS:
+        con.execute(f"CREATE VIEW {tabela} AS SELECT * FROM read_parquet('{_caminho_parquet(tabela)}')")
+
+    # fato_sell_out + correção de mojibake herdado da extração Oracle: a coluna
+    # origem_pedido perdeu a acentuação original ("LOGÍSTICO"/"FORÇA" viraram
+    # caracteres de substituição). Normaliza aqui, na camada de leitura.
+    con.execute(f"""
+        CREATE VIEW fato_sell_out AS
+        SELECT * REPLACE (
+            CASE
+                WHEN origem_pedido LIKE 'OPERADOR LOG_STICO' THEN 'OPERADOR LOGÍSTICO'
+                WHEN origem_pedido LIKE 'FOR_A DE VENDAS' THEN 'FORÇA DE VENDAS'
+                ELSE origem_pedido
+            END AS origem_pedido
+        )
+        FROM read_parquet('{_caminho_parquet("fato_sell_out")}')
+    """)
+
+    # dim_periodo: calendário sintético (não vem do Oracle) usado para padronizar
+    # o agrupamento por mês em todas as tabelas fato, que hoje têm colunas de
+    # data com nomes diferentes (dt_venda, dt_emissao, dt_estoque, dt_entrada).
+    case_mes = " ".join(f"WHEN {mes} THEN '{nome}'" for mes, nome in NOMES_MESES_PT.items())
+    con.execute(f"""
+        CREATE VIEW dim_periodo AS
+        SELECT
+            d::DATE AS dt_periodo,
+            EXTRACT(year FROM d)::INT AS ano,
+            EXTRACT(month FROM d)::INT AS mes,
+            EXTRACT(quarter FROM d)::INT AS trimestre,
+            strftime(d, '%Y-%m') AS mes_ano,
+            CASE EXTRACT(month FROM d) {case_mes} END AS nome_mes
+        FROM generate_series(DATE '2020-01-01', DATE '2035-12-31', INTERVAL 1 day) AS t(d)
+    """)
+
+    return con
+
+def load_data(query: str) -> pd.DataFrame:
+    con = init_connection()
+    return con.execute(query).df()
+
+def obter_lista_meses(tabela: str, coluna_data: str) -> list:
+    """Lista de meses (mes_ano) disponíveis para uma tabela fato específica,
+    usada para popular o filtro de mês local de cada aba."""
+    try:
+        df_meses = load_data(f"""
+            SELECT DISTINCT dp.mes_ano AS mes
+            FROM {tabela} f
+            JOIN dim_periodo dp ON dp.dt_periodo = f.{coluna_data}
+            ORDER BY mes DESC
+        """)
+        return ["Todos"] + df_meses['mes'].tolist()
+    except Exception:
+        return ["Todos"]
 
 # ============================================================================
 # 4. MÓDULOS DE ANÁLISE (FUNÇÕES POR ABA)
 # ============================================================================
 
 # --- ABA 1: ESTOQUE ---
-def render_tab_estoque(mes_selecionado):
-    st.header(f"📦 Estoque e Cobertura {f'({mes_selecionado})' if mes_selecionado != 'Todos' else ''}")
-    
-    col_visao, _ = st.columns([1, 2])
+def render_tab_estoque():
+    st.header("📦 Estoque e Cobertura")
+
+    col_mes, col_visao, _ = st.columns([1, 1, 2])
+    with col_mes:
+        lista_meses = obter_lista_meses("fato_estoque_diario", "dt_estoque")
+        mes_selecionado = st.selectbox("📅 Mês de Referência:", lista_meses, key="mes_estoque")
     with col_visao:
         tipo_visao = st.radio(
             "Métrica de Análise (Estoque):",
@@ -111,11 +177,14 @@ def render_tab_estoque(mes_selecionado):
     is_valor = tipo_visao == "Valor (R$)"
     st.markdown("---")
 
-    filtro_data = "" if mes_selecionado == "Todos" else f"WHERE TO_CHAR(dt_estoque, 'YYYY-MM') = '{mes_selecionado}'"
-    
+    filtro_data = "" if mes_selecionado == "Todos" else f"WHERE dp.mes_ano = '{mes_selecionado}'"
+
     query_estoque_doh = f"""
         WITH cte_data_maxima AS (
-            SELECT MAX(dt_estoque) AS max_dt FROM fato_estoque_diario {filtro_data}
+            SELECT MAX(e.dt_estoque) AS max_dt
+            FROM fato_estoque_diario e
+            JOIN dim_periodo dp ON dp.dt_periodo = e.dt_estoque
+            {filtro_data}
         ),
         cte_media_sell_out_30d AS (
             SELECT 
@@ -223,8 +292,11 @@ def render_tab_estoque(mes_selecionado):
 # --- ABA 2: SELL IN ---
 def render_tab_sell_in():
     st.header("📥 Acompanhamento de Sell In (Compras e Entregas)")
-    
-    col_visao, _ = st.columns([1, 2])
+
+    col_mes, col_visao, _ = st.columns([1, 1, 2])
+    with col_mes:
+        lista_meses = obter_lista_meses("fato_sell_in", "dt_emissao")
+        mes_selecionado = st.selectbox("📅 Mês de Referência (Emissão):", lista_meses, key="mes_sell_in")
     with col_visao:
         tipo_visao = st.radio(
             "Métrica de Análise (Sell In):",
@@ -235,17 +307,21 @@ def render_tab_sell_in():
     is_valor = tipo_visao == "Valor (R$)"
     st.markdown("---")
 
-    query_evolucao_sell_in = """
-        SELECT 
-            TO_CHAR(dt_emissao, 'YYYY-MM') AS mes_ano,
-            SUM(qt_pedida) AS qtd_pedida, SUM(qt_entregue) AS qtd_entregue,
-            ROUND(SUM(qt_pedida * preco_compra), 2) AS vl_total_pedido,
-            ROUND(SUM(qt_entregue * preco_compra), 2) AS vl_total_entregue
-        FROM fato_sell_in
-        GROUP BY TO_CHAR(dt_emissao, 'YYYY-MM')
-        ORDER BY mes_ano;
+    filtro_sql = "" if mes_selecionado == "Todos" else f"WHERE dp.mes_ano = '{mes_selecionado}'"
+
+    query_evolucao_sell_in = f"""
+        SELECT
+            dp.mes_ano,
+            SUM(si.qt_pedida) AS qtd_pedida, SUM(si.qt_entregue) AS qtd_entregue,
+            ROUND(SUM(si.qt_pedida * si.preco_compra), 2) AS vl_total_pedido,
+            ROUND(SUM(si.qt_entregue * si.preco_compra), 2) AS vl_total_entregue
+        FROM fato_sell_in si
+        JOIN dim_periodo dp ON dp.dt_periodo = si.dt_emissao
+        {filtro_sql}
+        GROUP BY dp.mes_ano
+        ORDER BY dp.mes_ano;
     """
-    
+
     df_sell_in = load_data(query_evolucao_sell_in)
 
     if df_sell_in.empty:
@@ -290,10 +366,13 @@ def render_tab_sell_in():
 
 
 # --- ABA 3: SELL OUT ---
-def render_tab_sell_out(mes_selecionado):
-    st.header(f"🛍️ Acompanhamento de Sell Out {f'({mes_selecionado})' if mes_selecionado != 'Todos' else ''}")
+def render_tab_sell_out():
+    st.header("🛍️ Acompanhamento de Sell Out")
 
-    ctrl_col1, ctrl_col2, _ = st.columns([1, 1, 2])
+    ctrl_col_mes, ctrl_col1, ctrl_col2, _ = st.columns([1, 1, 1, 1])
+    with ctrl_col_mes:
+        lista_meses = obter_lista_meses("fato_sell_out", "dt_venda")
+        mes_selecionado = st.selectbox("📅 Mês de Referência:", lista_meses, key="mes_sell_out")
     with ctrl_col1:
         tipo_visao = st.radio(
             "Métrica de Análise (Sell Out):",
@@ -309,11 +388,11 @@ def render_tab_sell_out(mes_selecionado):
     metric_label = 'Montante Líquido (R$)' if is_valor else 'Volume Líquido (Unid.)'
     st.markdown("---")
 
-    filtro_sql = "" if mes_selecionado == "Todos" else f"WHERE TO_CHAR(so.dt_venda, 'YYYY-MM') = '{mes_selecionado}'"
+    filtro_sql = "" if mes_selecionado == "Todos" else f"WHERE dp.mes_ano = '{mes_selecionado}'"
 
     query_sell_out = f"""
-        SELECT 
-            TO_CHAR(so.dt_venda, 'YYYY-MM') AS mes_ano,
+        SELECT
+            dp.mes_ano,
             c.nm_cliente, c.nm_cliente_fantasia, c.uf,
             p.desc_produto, p.categoria, p.marca,
             so.origem_pedido,
@@ -322,11 +401,12 @@ def render_tab_sell_out(mes_selecionado):
             SUM(so.vl_total_vendido) AS vl_bruto,
             SUM(so.vl_total_devolvido) AS vl_devolvido
         FROM fato_sell_out so
+        JOIN dim_periodo dp ON dp.dt_periodo = so.dt_venda
         JOIN dim_produto p ON so.cod_produto = p.cod_produto
         JOIN dim_cliente c ON so.cod_cliente = c.cod_cliente
         {filtro_sql}
-        GROUP BY 
-            TO_CHAR(so.dt_venda, 'YYYY-MM'), c.nm_cliente, c.nm_cliente_fantasia, 
+        GROUP BY
+            dp.mes_ano, c.nm_cliente, c.nm_cliente_fantasia,
             c.uf, p.desc_produto, p.categoria, p.marca, so.origem_pedido;
     """
     df_so = load_data(query_sell_out)
@@ -443,24 +523,30 @@ def render_tab_sell_out(mes_selecionado):
 
 
 # --- ABA 4: POSITIVAÇÃO ---
-def render_tab_positivacao(mes_selecionado):
-    st.header(f"🎯 Positivação e Capilaridade de Mercado {f'({mes_selecionado})' if mes_selecionado != 'Todos' else ''}")
+def render_tab_positivacao():
+    st.header("🎯 Positivação e Capilaridade de Mercado")
+
+    col_mes, _ = st.columns([1, 3])
+    with col_mes:
+        lista_meses = obter_lista_meses("fato_sell_out", "dt_venda")
+        mes_selecionado = st.selectbox("📅 Mês de Referência:", lista_meses, key="mes_positivacao")
     st.markdown("---")
 
     filtro_sql = "AND so.qtd_vendida > so.qtd_devolvida"
     if mes_selecionado != "Todos":
-        filtro_sql += f" AND TO_CHAR(so.dt_venda, 'YYYY-MM') = '{mes_selecionado}'"
+        filtro_sql += f" AND dp.mes_ano = '{mes_selecionado}'"
 
     query_positivacao = f"""
-        SELECT 
-            TO_CHAR(so.dt_venda, 'YYYY-MM') AS mes_ano,
+        SELECT
+            dp.mes_ano,
             p.desc_produto, p.categoria, p.marca,
             COUNT(DISTINCT so.cod_cliente) AS qtd_clientes_positivados,
             SUM(so.vl_total_vendido - so.vl_total_devolvido) AS vl_liquido
         FROM fato_sell_out so
+        JOIN dim_periodo dp ON dp.dt_periodo = so.dt_venda
         JOIN dim_produto p ON so.cod_produto = p.cod_produto
         WHERE 1=1 {filtro_sql}
-        GROUP BY TO_CHAR(so.dt_venda, 'YYYY-MM'), p.desc_produto, p.categoria, p.marca;
+        GROUP BY dp.mes_ano, p.desc_produto, p.categoria, p.marca;
     """
     
     query_total_clientes = "SELECT COUNT(*) as total FROM dim_cliente WHERE uf = 'CE';"
@@ -475,15 +561,16 @@ def render_tab_positivacao(mes_selecionado):
         return
 
     # Subquery para o KPI Global de Ativação mantendo o filtro temporal
-    filtro_dt = "" if mes_selecionado == "Todos" else f"AND TO_CHAR(dt_venda, 'YYYY-MM') = '{mes_selecionado}'"
+    filtro_dt = "" if mes_selecionado == "Todos" else f"AND dp.mes_ano = '{mes_selecionado}'"
     df_mensal_consolidado = load_data(f"""
-        SELECT 
-            TO_CHAR(dt_venda, 'YYYY-MM') AS mes_ano,
-            COUNT(DISTINCT cod_cliente) AS total_unicos
-        FROM fato_sell_out
-        WHERE qtd_vendida > qtd_devolvida {filtro_dt}
-        GROUP BY TO_CHAR(dt_venda, 'YYYY-MM')
-        ORDER BY mes_ano DESC;
+        SELECT
+            dp.mes_ano,
+            COUNT(DISTINCT so.cod_cliente) AS total_unicos
+        FROM fato_sell_out so
+        JOIN dim_periodo dp ON dp.dt_periodo = so.dt_venda
+        WHERE so.qtd_vendida > so.qtd_devolvida {filtro_dt}
+        GROUP BY dp.mes_ano
+        ORDER BY dp.mes_ano DESC;
     """)
     
     clientes_positivados_atual = df_mensal_consolidado['total_unicos'].iloc[0] if not df_mensal_consolidado.empty else 0
@@ -564,38 +651,21 @@ def main():
     with col_logo_dir:
         st.image("imagens/logo tena.png", use_container_width=True)
         
+    st.caption("Última atualização: Pipeline Batch diário")
     st.markdown("---")
 
-    # Extração dinâmica dos meses
-    try:
-        df_meses = load_data("SELECT DISTINCT TO_CHAR(dt_venda, 'YYYY-MM') AS mes FROM fato_sell_out ORDER BY mes DESC")
-        lista_meses = ["Todos"] + df_meses['mes'].tolist()
-    except Exception:
-        lista_meses = ["Todos"]
-
-    # Filtro Global na Página Principal
-    col_filtro, col_info, col_vazia = st.columns([2, 2, 4])
-    with col_filtro:
-        mes_selecionado = st.selectbox("📅 Filtro Global: Mês de Referência", lista_meses)
-    with col_info:
-        st.write("") # Espaçamento para alinhar verticalmente
-        st.write("")
-        st.caption("Última atualização: Pipeline Batch diário")
-
-    st.markdown("---")
-
-    # Renderização das Abas
+    # Renderização das Abas (cada uma com seu próprio filtro de mês, independente das demais)
     tab1, tab2, tab3, tab4 = st.tabs([
-        "📦 1. ESTOQUE", 
-        "📥 2. SELL IN", 
-        "🛍️ 3. SELL OUT", 
+        "📦 1. ESTOQUE",
+        "📥 2. SELL IN",
+        "🛍️ 3. SELL OUT",
         "🎯 4. POSITIVAÇÃO"
     ])
-    
-    with tab1: render_tab_estoque(mes_selecionado)
-    with tab2: render_tab_sell_in() 
-    with tab3: render_tab_sell_out(mes_selecionado)
-    with tab4: render_tab_positivacao(mes_selecionado)
+
+    with tab1: render_tab_estoque()
+    with tab2: render_tab_sell_in()
+    with tab3: render_tab_sell_out()
+    with tab4: render_tab_positivacao()
 
 if __name__ == "__main__":
     main()

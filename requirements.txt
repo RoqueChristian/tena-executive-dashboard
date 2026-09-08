@@ -10,3 +10,4 @@ mysql-connector-python
 openpyxl
 pytz
 sqlalchemy
+duckdb

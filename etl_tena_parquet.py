@@ -2,8 +2,7 @@ import os
 import logging
 import oracledb
 import pandas as pd
-from datetime import datetime
-import streamlit as st 
+import streamlit as st
 
 # ============================================================================
 # CONFIGURAÇÃO DE LOGGING
@@ -44,33 +43,32 @@ def read_sql_file(filename: str) -> str:
 def extract_to_parquet(oracle_conn, sql_filename: str, target_name: str):
     """
     Executa a query na origem e materializa os resultados em formato colunar Parquet.
-    Implementa versionamento de arquivos via timestamp para evitar sobrescrita (imutabilidade).
+    Cada tabela usa um nome de arquivo fixo: uma nova execução sobrescreve a anterior
+    em vez de acumular versões.
     """
     query = read_sql_file(sql_filename)
     output_dir = os.path.join(os.getcwd(), 'data')
-    
+
     # Garante a existência do diretório 'data' evidenciado na estrutura do projeto
     os.makedirs(output_dir, exist_ok=True)
-    
-    # Timestamp para versionamento do arquivo (Padrão Data Lake)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    file_path = os.path.join(output_dir, f"{target_name}_{timestamp}.parquet")
-    
+
+    file_path = os.path.join(output_dir, f"{target_name}.parquet")
+
     with oracle_conn.cursor() as cursor:
         logger.info(f"Iniciando extração de {target_name}...")
         cursor.execute(query)
-        
+
         columns = [col[0].lower() for col in cursor.description]
         records = cursor.fetchall()
-        
+
         if not records:
             logger.warning(f"Nenhum registro retornado para {target_name}. Processamento ignorado.")
             return
-            
+
         # Conversão em memória para DataFrame
         df = pd.DataFrame(records, columns=columns)
-        
-        # Escrita otimizada utilizando PyArrow e compressão Snappy
+
+        # Escrita otimizada utilizando PyArrow e compressão Snappy (sobrescreve o arquivo existente)
         df.to_parquet(file_path, engine='pyarrow', compression='snappy', index=False)
         logger.info(f"Arquivo gerado com sucesso: {file_path} (Total: {len(df)} linhas).")
 
